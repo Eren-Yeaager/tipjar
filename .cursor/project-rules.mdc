@@ -1,49 +1,293 @@
-# .cursor-rules
-
-> **Project:** TipJar — Web3 tipping MVP  
-> **Purpose:** Tell Cursor _exactly_ how to design & build the first shippable version.  
-> **Style:** Step-by-step, no code generation unless explicitly requested in a task.  
-> **Principle:** MVP over perfect; small, testable increments.
-
 ---
-
-## 0) One‑page product brief (for context)
-**What we’re building:** A non-custodial tipping app on an L2 (Base) where creators can create a Jar, share a link/QR, and receive on-chain tips (ETH/USDC). Each tip can be split automatically among collaborators and the platform treasury. Supporters optionally get a simple “Thank You” NFT.
-
-**MVP must-have features:**
-- Create Jar (owner wallet, name/handle, avatar, static split rules)  
-- Accept tips in ETH and USDC on Base  
-- Instant split payouts (no buffered mode in MVP)  
-- Public jar page + tip flow + success/receipt page  
-- Basic analytics: total tips count & volume, top supporters  
-- Optional: Discord webhook on `TipReceived`
-
-**Non-goals (v1):** fiat on-ramp, multi-chain, subscription/recurring tips, custody, complex NFT gamification, paymaster gas sponsorship.
-
-**Why this order:** Delivers core value fast: creators can receive tips **today** with transparent splits.
-
+alwaysApply: true
 ---
-
 ## 1) Global constraints & guardrails
-- **Chain:** Base (testnet for staging, mainnet for prod).  
-- **Tokens:** ETH & USDC only in MVP.  
-- **Security posture:** allowlisted tokens, reentrancy guard, bounded loops (max 5 beneficiaries), non-upgradeable jars for MVP (versioned factory for future).  
-- **DX:** Keep code generation disabled unless a task explicitly says “Generate code for …”.  
-- **Testing:** Unit/fuzz for contracts; one happy-path E2E for web (connect → tip → receipt).  
-- **Analytics:** Off-chain indexing from events; do **not** block core flows if indexer is down.  
-- **Accessibility:** Keyboard navigable, color-contrast safe, minimal motion.
+
+* **Chain:** Base (testnet for staging, mainnet for prod).
+* **Tokens:** ETH & USDC only in MVP.
+* **Security posture:** allowlisted tokens, reentrancy guard, bounded loops (max 5 beneficiaries), non-upgradeable jars for MVP (versioned factory for future).
+* **DX:** Keep code generation disabled unless a task explicitly says “Generate code for …”.
+* **Testing:** Unit/fuzz for contracts; one happy-path E2E for web (connect → tip → receipt).
+* **Analytics:** Off-chain indexing from events; do **not** block core flows if indexer is down.
+* **Accessibility:** Keyboard navigable, color-contrast safe, minimal motion.
 
 ---
 
 ## 2) Architecture (high level)
-- **Smart Contracts (MVP):** `JarFactory` (deploys TipJar), `TipJar` (holds rules; splits on receive), minimal `Registry` (token allowlist, fee bps). Optional simple `ThanksNFT` (ERC-1155 single tier).  
-- **Frontend:** Next.js 14 (App Router), TS, shadcn/ui, Wagmi + Viem, RainbowKit, Zustand.  
-- **Backend (read-mostly):** Node (Fastify/Express), Postgres, Prisma, Redis (rate-limit sessions), Worker (log consumer) to index events for analytics & leaderboards.  
-- **Infra:** Docker for all services; single-node deployment okay for MVP; CI with lint/test/build; simple logs + uptime.
+
+* **Smart Contracts (MVP):** `JarFactory` (deploys TipJar), `TipJar` (holds rules; splits on receive), minimal `Registry` (token allowlist, fee bps). Optional simple `ThanksNFT` (ERC-1155 single tier).
+* **Frontend:** Next.js 14 (App Router), TS, shadcn/ui, Wagmi + Viem, RainbowKit, Zustand.
+* **Backend (read-mostly):** Node (Fastify/Express), Postgres, Prisma, Redis (rate-limit sessions), Worker (log consumer) to index events for analytics & leaderboards.
+* **Infra:** Docker for all services; single-node deployment okay for MVP; CI with lint/test/build; simple logs + uptime.
 
 > **Note to Cursor:** Keep interfaces stable. If a change ripples across layers, propose a mini-ADR before proceeding.
 
 ---
 
 ## 3) Information architecture & UX targets
-... (remaining sections truncated for brevity in this cell) ...
+
+### Public
+
+* **Jar Page** `/u/[handle]`
+
+  * Header: avatar, name, handle, short bio.
+  * Tip form: token selector (ETH/USDC), amount (with min), split preview (read-only), Connect/Send.
+  * Footer: total received, top 3 supporters.
+* **Success / Receipt** `/r/[txHash]`
+
+  * Status (confirmed), amount, token, split summary, share link/QR.
+
+### Creator Dashboard (minimal)
+
+* **My Jars** list + Create Jar flow (form + on-chain tx).
+* **Jar Analytics (basic)**: totals, last 10 tips.
+
+### Global UX rules
+
+* Clear gas & USD equivalents.
+* Never ask for unlimited ERC20 approvals (suggest exact amount or permit path later).
+* Show chain & network status.
+* Error states must describe fix: network mismatch, insufficient funds, denied signature.
+
+---
+
+## 4) Data model (MVP)
+
+* `users(id, address, handle, display_name, avatar_uri, created_at)`
+* `jars(id, owner, handle, mode='INSTANT', fee_bps, created_at)`
+* `splits(id, jar_id, beneficiary, bps)`
+* `tips(id, jar_id, tx_hash, from_addr, token, amount_raw, amount_usd, block_time)`
+
+**Notes:** Off-chain DB is for analytics/UX only. Canonical truth = chain events.
+
+---
+
+## 5) API surface (read-only, MVP)
+
+* `GET /jars/:handle` → profile, rules, stats
+* `GET /jars/:handle/tips?limit&cursor` → recent tips
+* `GET /leaderboard?jar=:id&period=7d` → top supporters
+* `POST /webhooks` (creator-auth) → register Discord endpoint (optional)
+
+Authentication for creator routes via SIWE.
+
+---
+
+## 6) Contracts — functional spec (no code)
+
+* **JarFactory**
+
+  * Inputs: handle, splits (≤5), feeBps, allowlisted tokens inferred via Registry.
+  * Emits: `JarCreated(owner, jar, handle)`.
+* **TipJar**
+
+  * State: owner, splits, feeBps, treasury.
+  * Methods: `tipETH(memo) payable`, `tipERC20(token, amount, memo)`; on receive → split & pay beneficiaries + treasury; emit `TipReceived(from, token, amount)`.
+  * Constraints: sum(bps) + feeBps == 10000; revert on token not allowlisted; reentrancy guard.
+* **Registry**
+
+  * Allowlisted tokens (ETH, USDC) + fee config.
+* **(Optional) ThanksNFT**
+
+  * Single tier per jar; mint on tip ≥ threshold; emits `NftMinted`.
+
+---
+
+## 7) Phased plan (step-by-step tasks)
+
+### Phase 0 — Project setup (0.5 day)
+
+* [ ] Create mono repo skeleton (apps/web, apps/api, workers/indexer, contracts, infra).
+* [ ] Configure linting, formatting, commit hooks.
+* [ ] Add environment templates (.env.example) with Base RPCs & DB URL.
+* [ ] Define `RUNBOOK.md` (env setup, common errors).
+
+**Deliverables:** Repo initialized, CI green (lint+typecheck).
+**Accept:** CI badge green; local dev starts with one command.
+
+### Phase 1 — Contracts spec & events (1–2 days)
+
+* [ ] Finalize ABI & events for JarFactory/TipJar/Registry.
+* [ ] Define event topics for indexer mapping.
+* [ ] Write a one-pager ADR: allowlist policy, split limits, fee math & rounding.
+* [ ] Deploy throwaway test build to Base testnet for manual pokes.
+
+**Deliverables:** ABIs, addresses (testnet), event docs.
+**Accept:** Events observed in a block explorer; edge cases documented.
+
+### Phase 2 — Public tip flow (web) (2 days)
+
+* [ ] Build `/u/[handle]` page with tip form (ETH/USDC), connect, amount input, split preview.
+* [ ] Build receipt `/r/[tx]` with success status & share link.
+* [ ] Handle common failures: wrong network, rejected sig, insufficient funds.
+* [ ] Add minimal theming + responsive.
+
+**Deliverables:** Clickable tip from test wallet to test jar.
+**Accept:** Happy-path E2E passes (connect→tip→receipt on Base testnet).
+
+### Phase 3 — Indexer & basic analytics (2 days)
+
+* [ ] Worker subscribes to `JarCreated`, `TipReceived`.
+* [ ] Persist tips; compute totals by jar.
+* [ ] API endpoints (read-only) serve jar profile, totals, recent tips.
+* [ ] Leaderboard by address for last 7d.
+
+**Deliverables:** Web reads analytics; numbers match chain within 1 block.
+**Accept:** Re-org tolerant (confirmations N), backfill on restart.
+
+### Phase 4 — Creator dashboard minimal (1–1.5 days)
+
+* [ ] SIWE auth.
+* [ ] “My Jars” list & **Create Jar** flow (UI: form + tx).
+* [ ] Simple analytics view (totals, top supporters, table of last tips).
+
+**Deliverables:** Creator can create a jar & watch tips come in.
+**Accept:** Manual QA across desktop/mobile.
+
+### Phase 5 — Discord webhook (0.5 day)
+
+* [ ] Register webhook URL.
+* [ ] Deliver `tip.received` with jar handle, from, token, amount, receipt link.
+* [ ] Retries with backoff; signing secret.
+
+**Deliverables:** Tips mirrored to Discord.
+**Accept:** At-least-once delivery with idempotency.
+
+### Phase 6 — QA & hardening (1–2 days)
+
+* [ ] Contracts scenario test checklist (sum correctness, rounding, reentrancy, non-allowlisted token).
+* [ ] Web E2E: ETH tip, USDC tip, network switch, failure states.
+* [ ] A11y pass; perf budget; 404/500 states.
+* [ ] Observability: basic uptime & error alerts.
+
+**Deliverables:** Staging release notes; go/no-go doc.
+**Accept:** All checks green; rollback plan documented.
+
+> **MVP TOTAL:** ~7–9 days (focused).
+
+---
+
+## 8) Acceptance criteria (MVP)
+
+* A creator can create a jar with up to 5 beneficiaries whose bps sum + fee equals 100%.
+* A supporter can tip ETH or USDC on Base and see a success receipt.
+* Splits & treasury fee are paid out instantly and verifiably on-chain.
+* Public jar page displays total tips & top 3 supporters (from indexer).
+* Optional Discord message posts within seconds of a tip.
+* No custodial balances; no admin keys to move user funds.
+
+---
+
+## 9) Risks & mitigations (MVP scope)
+
+* **Bad ERC20 behavior:** restrict to allowlisted tokens (ETH, USDC) only.
+* **Rounding errors:** deterministic rounding policy; include ADR with examples.
+* **Event gaps:** indexer with replay & confirmations; gap alarms.
+* **UX confusion:** clear network prompts; safe approval defaults; USD previews.
+
+---
+
+## 10) Definitions of Done (per artifact)
+
+* **Contract:** Spec reviewed, invariants listed, events final, deployed to testnet, minimal audit checklist completed.
+* **API:** OpenAPI doc, smoke tests, paginated lists, backpressure safe.
+* **Web:** Works on mobile & desktop, SSR safe, hydration warnings = 0.
+* **Indexer:** Idempotent, reorg-aware, backfill from block N, metrics exported.
+* **Docs:** `README`, `.env.example`, `RUNBOOK`, `RELEASE_NOTES` complete.
+
+---
+
+## 11) Security & compliance checklist
+
+* [ ] Reentrancy guard on tip paths
+* [ ] Allowlist tokens: ETH, USDC
+* [ ] Max beneficiaries ≤ 5
+* [ ] Sum(bps)+fee == 10000 invariant
+* [ ] Safe ETH/erc20 transfer wrappers
+* [ ] Admin ops cannot seize user funds
+* [ ] Public functions bounded; no unbounded storage iteration
+* [ ] Rate limits on API, basic abuse controls on tip messages
+
+---
+
+## 12) Observability & ops (MVP)
+
+* **Metrics:** API p95 latency, error rate; indexer lag; tip/sec; webhook success rate.
+* **Alerts:** indexer stuck > 2 mins; API 5xx > 2%/5m.
+* **Logs:** structured JSON; correlation ids per request/tx.
+* **Runbooks:** incident triage, replay indexer, rotate secrets.
+
+---
+
+## 13) Launch checklist
+
+* [ ] Staging smoke tests pass (ETH + USDC)
+* [ ] At least 3 real creators onboarded for beta
+* [ ] Docs & FAQ published
+* [ ] Status page live
+* [ ] Postmortem template prepared
+* [ ] Rollback plan tested on staging
+
+---
+
+## 14) Mini-ADRs to capture before coding
+
+* **ADR-01:** rounding & remainder policy in `_splitAndPay`
+* **ADR-02:** fee collection strategy (per-tip vs batched)
+* **ADR-03:** handle uniqueness & collision policy
+* **ADR-04:** event schema and indexer confirmations
+* **ADR-05:** approval vs permit fast-path (defer permit to post-MVP)
+
+---
+
+## 15) Prompts to give Cursor (when you DO want code)
+
+> Use these only when ready. Keep code minimal and aligned to specs above.
+
+**A. Contracts (spec-first):**
+“Generate Solidity interfaces only (no impl) for `JarFactory`, `TipJar`, `Registry` aligned with the events & constraints in section 6. Include NatSpec. Do not implement functions.”
+
+**B. Web tip flow (ETH only first):**
+“Create a Next.js page at `/u/[handle]` with a connect button, amount input, and a disabled ‘Send’ state until connected and amount>0. No chain calls yet; use mocked handlers.”
+
+**C. Indexer skeleton:**
+“Create a Node worker that subscribes to two topics `JarCreated` and `TipReceived`, writes rows to Postgres, and has an idempotent upsert. Provide a single `start()` entrypoint.”
+
+**D. E2E happy path:**
+“Using Playwright and Synpress, write one test: connect wallet on Base testnet, tip 0.01 ETH to a test jar, and assert receipt UI appears with tx hash.”
+
+---
+
+## 16) Timeline & staffing (solo-builder friendly)
+
+* **Week 1:** Contracts spec → Public tip flow → testnet deploy
+* **Week 2:** Indexer + API → Creator dashboard (create jar) → Discord webhook → QA hardening → Staging beta
+
+> If behind schedule, ship without webhooks & NFT; add them in Week 3.
+
+---
+
+## 17) Post‑MVP backlog (prioritized)
+
+1. Buffered mode + `settle()`
+2. NFT tiers with artwork & claim page
+3. Farcaster Frame ‘Tip inline’
+4. Paymaster for gas sponsorship on Base
+5. Multi-chain (Polygon)
+6. Public leaderboards with filters
+7. Embeddable widget & SDK
+8. Pro analytics (cohorts, LTV)
+
+---
+
+## 18) Style & quality bar
+
+* Keep interfaces tiny, predictable, and well-commented.
+* Prefer explicit over magic.
+* Fail loud during staging; fail soft in production UI.
+* Every feature must have: UX spec → acceptance criteria → basic tests.
+
+---
+
+**End of .cursor-rules**
+Use this document to gate tasks and keep the scope ruthlessly MVP-focused.
