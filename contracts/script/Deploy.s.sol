@@ -10,24 +10,22 @@ contract DeployScript is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
-        
+
         console.log("Deploying contracts to Base Sepolia Testnet");
         console.log("Deployer address:", deployer);
         console.log("Account balance:", deployer.balance);
 
         vm.startBroadcast(deployerPrivateKey);
 
-       
-        address treasury = deployer; 
+        address treasury = deployer;
         uint256 feeBps = 500; // 5%
-        
+
         address[] memory allowedTokens = new address[](1);
         allowedTokens[0] = address(0); // ETH
-        
+
         Registry registry = new Registry(treasury, feeBps, allowedTokens);
         console.log("Registry deployed at:", address(registry));
 
-       
         JarFactory factory = new JarFactory(address(registry));
         console.log("JarFactory deployed at:", address(factory));
 

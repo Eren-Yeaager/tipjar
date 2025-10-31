@@ -5,7 +5,7 @@ pragma solidity ^0.8.23;
  * @notice Interface for factory that deploys TipJar instances
  */
 
-interface IJarFactory{
+interface IJarFactory {
     /**
      * @notice Create a new TipJar
      * @param handle Unique handle for the jar (e.g., "saswat")
@@ -27,5 +27,5 @@ interface IJarFactory{
      * @param jar Address of the deployed TipJar
      * @param handle Unique handle
      */
-     event JarCreated(address indexed owner, address indexed jar , string indexed handle);
+    event JarCreated(address indexed owner, address indexed jar, string indexed handle);
 }

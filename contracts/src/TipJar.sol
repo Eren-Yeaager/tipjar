@@ -18,13 +18,13 @@ contract TipJar is ITipJar, ReentrancyGuard {
     address public immutable REGISTRY;
     uint256 public immutable FEE_BPS;
 
-    struct Split{
+    struct Split {
         address beneficiary;
         uint256 bps;
     }
     Split[] public splits;
 
-     /**
+    /**
      * @notice Constructor
      * @param _owner Owner of the jar
      * @param _registry Registry contract address
@@ -33,17 +33,17 @@ contract TipJar is ITipJar, ReentrancyGuard {
      * @param _feeBps Fee in basis points
      */
 
-     constructor(
+    constructor(
         address _owner,
         address _registry,
         address[] memory _beneficiaries,
         uint256[] memory _bps,
         uint256 _feeBps
-     ){
-        require(_owner != address(0),"TipJar: zero owner");
-        require(_registry != address(0),"TipJar: zero registry");
-        require(_beneficiaries.length == _bps.length,"TipJar:length mismatch");
-        require(_beneficiaries.length <=5 ,"TipJar: max 5 beneficiaries");
+    ) {
+        require(_owner != address(0), "TipJar: zero owner");
+        require(_registry != address(0), "TipJar: zero registry");
+        require(_beneficiaries.length == _bps.length, "TipJar:length mismatch");
+        require(_beneficiaries.length <= 5, "TipJar: max 5 beneficiaries");
         require(_feeBps <= 10000, "TipJar: fee > 100%");
 
         OWNER = _owner;
@@ -54,16 +54,23 @@ contract TipJar is ITipJar, ReentrancyGuard {
         for (uint256 i = 0; i < _beneficiaries.length; i++) {
             require(_beneficiaries[i] != address(0), "TipJar: zero beneficiary");
             require(_bps[i] > 0, "TipJar: zero bps");
-            splits.push(Split({beneficiary: _beneficiaries[i], bps: _bps[i]}));
+            splits.push(Split({ beneficiary: _beneficiaries[i], bps: _bps[i] }));
             totalBps += _bps[i];
         }
         require(totalBps == 10000, "TipJar: bps != 100%");
-     }
+    }
 
     /**
      * @notice Receive ETH tip with optional memo
      */
-    function tipETH(string memory /* memo */) external payable override nonReentrant {
+    function tipETH(
+        string memory /* memo */
+    )
+        external
+        payable
+        override
+        nonReentrant
+    {
         require(msg.value > 0, "TipJar: zero amount");
         require(IRegistry(REGISTRY).isTokenAllowed(address(0)), "TipJar: ETH not allowed");
 
@@ -80,7 +87,11 @@ contract TipJar is ITipJar, ReentrancyGuard {
         address token,
         uint256 amount,
         string memory /* memo */
-    ) external override nonReentrant {
+    )
+        external
+        override
+        nonReentrant
+    {
         require(token != address(0), "TipJar: zero token");
         require(amount > 0, "TipJar: zero amount");
         require(IRegistry(REGISTRY).isTokenAllowed(token), "TipJar: token not allowed");
@@ -103,7 +114,7 @@ contract TipJar is ITipJar, ReentrancyGuard {
         for (uint256 i = 0; i < splits.length; i++) {
             uint256 share = (amount * splits[i].bps) / 10000;
             if (share > 0) {
-                (bool success, ) = splits[i].beneficiary.call{value: share}("");
+                (bool success,) = splits[i].beneficiary.call{ value: share }("");
                 require(success, "TipJar: ETH transfer failed");
                 totalDistributed += share;
             }
@@ -114,7 +125,7 @@ contract TipJar is ITipJar, ReentrancyGuard {
         uint256 treasuryTotal = treasuryShare + remainder;
 
         if (treasuryTotal > 0) {
-            (bool success, ) = IRegistry(REGISTRY).treasury().call{value: treasuryTotal}("");
+            (bool success,) = IRegistry(REGISTRY).treasury().call{ value: treasuryTotal }("");
             require(success, "TipJar: treasury transfer failed");
         }
     }

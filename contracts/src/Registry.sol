@@ -20,11 +20,7 @@ contract Registry is IRegistry {
      * @param _allowedTokens Array of allowed token addresses (address(0) for ETH)
      */
 
-     constructor(
-        address _treasury,
-        uint256 _feeBps,
-        address[] memory _allowedTokens
-     ){
+    constructor(address _treasury, uint256 _feeBps, address[] memory _allowedTokens) {
         require(_treasury != address(0), "Registry: zero treasury");
         require(_feeBps <= 10000, "Registry: fee > 100%");
         TREASURY = _treasury;
@@ -33,9 +29,9 @@ contract Registry is IRegistry {
             allowedTokens[_allowedTokens[i]] = true;
         }
         allowedTokens[address(0)] = true;
-     }
+    }
 
-     /**
+    /**
      * @notice Check if a token is allowlisted
      * @param token Token address (address(0) for ETH)
      * @return true if token is allowed

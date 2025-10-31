@@ -7,7 +7,7 @@ import "../src/Registry.sol";
 contract RegistryTest is Test {
     Registry registry;
     address treasury = address(0x1);
-    uint256 feeBps = 500; 
+    uint256 feeBps = 500;
     address[] allowedTokens;
 
     function setUp() public {

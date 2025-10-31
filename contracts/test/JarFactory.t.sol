@@ -21,12 +21,12 @@ contract JarFactoryTest is Test {
     function test_CreateJar() public {
         address[] memory beneficiaries = new address[](1);
         beneficiaries[0] = address(0x2);
-        
+
         uint256[] memory bps = new uint256[](1);
         bps[0] = 9500; // 95%
-        
+
         address jar = factory.createJar("test-jar", beneficiaries, bps, 500);
-        
+
         assertTrue(jar != address(0));
         TipJar tipJar = TipJar(payable(jar));
         assertEq(tipJar.OWNER(), address(this));
@@ -35,7 +35,7 @@ contract JarFactoryTest is Test {
     function test_RevertEmptyHandle() public {
         address[] memory beneficiaries = new address[](1);
         uint256[] memory bps = new uint256[](1);
-        
+
         vm.expectRevert("JarFactory: empty handle");
         factory.createJar("", beneficiaries, bps, 500);
     }
